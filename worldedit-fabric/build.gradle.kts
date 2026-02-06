@@ -38,19 +38,25 @@ sourceSets {
 
 repositories {
     verifyEngineHubRepositories()
+    maven(url = uri("${gradle.gradleUserHomeDir}/caches/fabric-loom/minecraftMaven"))
+    maven(url = uri("${rootProject.projectDir}/.gradle/loom-cache/minecraftMaven"))
+    maven(url = uri("${rootProject.projectDir}/.gradle/loom-cache/remapped_mods"))
+    maven(url = "https://maven.enginehub.org/repo/")
+    mavenCentral()
+    maven(url = "https://maven.fabricmc.net/")
+    maven(url = "https://libraries.minecraft.net/")
 }
 
 dependencies {
     "api"(project(":worldedit-core"))
 
     "minecraft"(libs.fabric.minecraft)
-    "mappings"(loom.layered {
-        officialMojangMappings()
-        parchment("org.parchmentmc.data:parchment-${libs.versions.parchment.minecraft.get()}:${libs.versions.parchment.mappings.get()}@zip")
-    })
+    "mappings"(loom.officialMojangMappings())
     "modImplementation"(libs.fabric.loader)
     "include"(libs.parallelgzip)
     "modImplementation"(libs.parallelgzip)
+    "include"(libs.lz4Java)
+    "modImplementation"(libs.lz4Java)
     "include"(libs.sparsebitset)
     "modImplementation"(libs.sparsebitset)
 

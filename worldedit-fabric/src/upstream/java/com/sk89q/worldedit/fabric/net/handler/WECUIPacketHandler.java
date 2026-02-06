@@ -23,55 +23,23 @@ import com.sk89q.worldedit.LocalSession;
 import com.sk89q.worldedit.fabric.FabricAdapter;
 import com.sk89q.worldedit.fabric.FabricPlayer;
 import com.sk89q.worldedit.fabric.FabricWorldEdit;
-import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
-import net.minecraft.network.RegistryFriendlyByteBuf;
-import net.minecraft.network.codec.StreamCodec;
-import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
 
 import java.nio.charset.StandardCharsets;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 public final class WECUIPacketHandler {
     private WECUIPacketHandler() {
     }
 
-    private static final AtomicBoolean INITIALIZED = new AtomicBoolean(false);
-
-    public static final ResourceLocation CUI_IDENTIFIER = ResourceLocation.fromNamespaceAndPath(FabricWorldEdit.MOD_ID, FabricWorldEdit.CUI_PLUGIN_CHANNEL);
-
-    public record CuiPacket(String text) implements CustomPacketPayload {
-        public static final Type<CuiPacket> TYPE = new Type<>(CUI_IDENTIFIER);
-
-        @Override
-        public Type<? extends CustomPacketPayload> type() {
-            return TYPE;
-        }
-    }
+    public static final ResourceLocation CUI_IDENTIFIER = new ResourceLocation(FabricWorldEdit.MOD_ID, FabricWorldEdit.CUI_PLUGIN_CHANNEL);
 
     public static void init() {
-        if (!INITIALIZED.compareAndSet(false, true)) {
-            return;
-        }
-        StreamCodec<RegistryFriendlyByteBuf, CuiPacket> codec = CustomPacketPayload.codec(
-            (packet, buffer) -> buffer.writeCharSequence(packet.text(), StandardCharsets.UTF_8),
-            buffer -> new CuiPacket(buffer.readCharSequence(buffer.readableBytes(), StandardCharsets.UTF_8).toString())
-        );
-        registerIgnoringDuplicate(() -> PayloadTypeRegistry.playC2S().register(CuiPacket.TYPE, codec));
-        registerIgnoringDuplicate(() -> PayloadTypeRegistry.playS2C().register(CuiPacket.TYPE, codec));
-        registerIgnoringDuplicate(() -> ServerPlayNetworking.registerGlobalReceiver(CuiPacket.TYPE, (payload, context) -> {
-            LocalSession session = FabricWorldEdit.inst.getSession(context.player());
-            FabricPlayer actor = FabricAdapter.adaptPlayer(context.player());
-            session.handleCUIInitializationMessage(payload.text(), actor);
-        }));
-    }
-
-    private static void registerIgnoringDuplicate(Runnable registration) {
-        try {
-            registration.run();
-        } catch (IllegalArgumentException ignored) {
-            // Already registered by another initializer or classpath entry.
-        }
+        ServerPlayNetworking.registerGlobalReceiver(CUI_IDENTIFIER, (server, player, handler, buf, responder) -> {
+            LocalSession session = FabricWorldEdit.inst.getSession(player);
+            String text = buf.toString(StandardCharsets.UTF_8);
+            FabricPlayer actor = FabricAdapter.adaptPlayer(player);
+            session.handleCUIInitializationMessage(text, actor);
+        });
     }
 }

@@ -63,11 +63,10 @@ public class FabricServerLevelDelegateProxy implements InvocationHandler {
             return null;
         }
         BlockEntity newEntity = tileEntity.getType().create(blockPos, getBlockState(blockPos));
-        newEntity.loadWithComponents(
+        newEntity.load(
             NBTConverter.toNative(
                 this.editSession.getFullBlock(FabricAdapter.adapt(blockPos)).getNbtReference().getValue()
-            ),
-            this.serverLevel.registryAccess()
+            )
         );
 
         return newEntity;

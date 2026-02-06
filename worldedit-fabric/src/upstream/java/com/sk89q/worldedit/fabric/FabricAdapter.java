@@ -19,7 +19,6 @@
 
 package com.sk89q.worldedit.fabric;
 
-import com.mojang.serialization.Codec;
 import com.sk89q.worldedit.blocks.BaseItemStack;
 import com.sk89q.worldedit.extension.platform.Actor;
 import com.sk89q.worldedit.fabric.internal.FabricTransmogrifier;
@@ -40,10 +39,8 @@ import com.sk89q.worldedit.world.item.ItemType;
 import com.sk89q.worldedit.world.item.ItemTypes;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.core.BlockPos;
-import net.minecraft.core.component.DataComponentPatch;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.nbt.CompoundTag;
-import net.minecraft.nbt.NbtOps;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.util.StringRepresentable;
@@ -55,6 +52,7 @@ import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.properties.DirectionProperty;
 import net.minecraft.world.phys.Vec3;
+import org.enginehub.linbus.tree.LinTag;
 import org.enginehub.linbus.tree.LinCompoundTag;
 
 import java.util.Comparator;
@@ -92,7 +90,7 @@ public final class FabricAdapter {
 
     public static Biome adapt(BiomeType biomeType) {
         return FabricWorldEdit.getRegistry(Registries.BIOME)
-            .get(ResourceLocation.parse(biomeType.id()));
+            .get(new ResourceLocation(biomeType.id()));
     }
 
     public static BiomeType adapt(Biome biome) {
@@ -202,12 +200,12 @@ public final class FabricAdapter {
         }
         BlockState worldEdit = FabricTransmogrifier.transmogToWorldEdit(blockEntity.getBlockState());
         // Save this outside the reference to ensure it doesn't mutate
-        CompoundTag savedNative = blockEntity.saveWithId(blockEntity.getLevel().registryAccess());
+        CompoundTag savedNative = blockEntity.saveWithId();
         return worldEdit.toBaseBlock(LazyReference.from(() -> NBTConverter.fromNative(savedNative)));
     }
 
     public static Block adapt(BlockType blockType) {
-        return FabricWorldEdit.getRegistry(Registries.BLOCK).get(ResourceLocation.parse(blockType.id()));
+        return FabricWorldEdit.getRegistry(Registries.BLOCK).get(new ResourceLocation(blockType.id()));
     }
 
     public static BlockType adapt(Block block) {
@@ -215,41 +213,29 @@ public final class FabricAdapter {
     }
 
     public static Item adapt(ItemType itemType) {
-        return FabricWorldEdit.getRegistry(Registries.ITEM).get(ResourceLocation.parse(itemType.id()));
+        return FabricWorldEdit.getRegistry(Registries.ITEM).get(new ResourceLocation(itemType.id()));
     }
 
     public static ItemType adapt(Item item) {
         return ItemTypes.get(FabricWorldEdit.getRegistry(Registries.ITEM).getKey(item).toString());
     }
 
-    /**
-     * For serializing and deserializing components.
-     */
-    private static final Codec<DataComponentPatch> COMPONENTS_CODEC = DataComponentPatch.CODEC.optionalFieldOf(
-        "components", DataComponentPatch.EMPTY
-    ).codec();
-
     public static ItemStack adapt(BaseItemStack baseItemStack) {
         final ItemStack itemStack = new ItemStack(adapt(baseItemStack.getType()), baseItemStack.getAmount());
         LinCompoundTag nbt = baseItemStack.getNbt();
         if (nbt != null) {
-            DataComponentPatch componentPatch = COMPONENTS_CODEC.parse(
-                FabricWorldEdit.registryAccess().createSerializationContext(NbtOps.INSTANCE),
-                NBTConverter.toNative(nbt)
-            ).getOrThrow();
-            itemStack.applyComponents(componentPatch);
+            itemStack.setTag(NBTConverter.toNative(nbt));
         }
         return itemStack;
     }
 
     public static BaseItemStack adapt(ItemStack itemStack) {
-        CompoundTag tag = (CompoundTag) COMPONENTS_CODEC.encodeStart(
-            FabricWorldEdit.registryAccess().createSerializationContext(NbtOps.INSTANCE),
-            itemStack.getComponentsPatch()
-        ).getOrThrow();
-        return new BaseItemStack(
-            adapt(itemStack.getItem()), LazyReference.from(() -> NBTConverter.fromNative(tag)), itemStack.getCount()
-        );
+        LinCompoundTag rootTag = NBTConverter.fromNative(itemStack.save(new CompoundTag()));
+        LinTag<?> nbtTag = rootTag.value().get("tag");
+        if (nbtTag instanceof LinCompoundTag itemTag) {
+            return new BaseItemStack(adapt(itemStack.getItem()), LazyReference.from(() -> itemTag), itemStack.getCount());
+        }
+        return new BaseItemStack(adapt(itemStack.getItem()), itemStack.getCount());
     }
 
     /**

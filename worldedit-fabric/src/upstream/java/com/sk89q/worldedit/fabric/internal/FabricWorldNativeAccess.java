@@ -107,7 +107,7 @@ public class FabricWorldNativeAccess implements WorldNativeAccess<LevelChunk, Bl
         if (tileEntity == null) {
             return false;
         }
-        tileEntity.loadWithComponents(nativeTag, level.registryAccess());
+        tileEntity.load(nativeTag);
         tileEntity.setChanged();
         return true;
     }

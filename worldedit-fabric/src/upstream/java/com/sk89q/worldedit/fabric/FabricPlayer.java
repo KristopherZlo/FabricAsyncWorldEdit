@@ -43,6 +43,7 @@ import com.sk89q.worldedit.world.block.BlockTypes;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.ChatFormatting;
 import net.minecraft.core.BlockPos;
+import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket;
 import net.minecraft.network.protocol.game.ClientboundBlockUpdatePacket;
@@ -52,9 +53,11 @@ import net.minecraft.world.InteractionHand;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import org.enginehub.linbus.tree.LinCompoundTag;
+import io.netty.buffer.Unpooled;
 
 import java.util.Locale;
 import java.util.UUID;
+import java.nio.charset.StandardCharsets;
 import javax.annotation.Nullable;
 
 public class FabricPlayer extends AbstractPlayerActor {
@@ -130,13 +133,14 @@ public class FabricPlayer extends AbstractPlayerActor {
         }
         ServerPlayNetworking.send(
             this.player,
-            new WECUIPacketHandler.CuiPacket(send)
+            WECUIPacketHandler.CUI_IDENTIFIER,
+            new FriendlyByteBuf(Unpooled.copiedBuffer(send, StandardCharsets.UTF_8))
         );
     }
 
     @Override
     public Locale getLocale() {
-        return TextUtils.getLocaleByMinecraftTag(this.player.clientInformation().language());
+        return Locale.US;
     }
 
     @Override
@@ -170,8 +174,7 @@ public class FabricPlayer extends AbstractPlayerActor {
     @Override
     public void print(Component component) {
         this.player.sendSystemMessage(net.minecraft.network.chat.Component.Serializer.fromJson(
-            GsonComponentSerializer.INSTANCE.serialize(WorldEditText.format(component, getLocale())),
-            player.level().registryAccess()
+            GsonComponentSerializer.INSTANCE.serialize(WorldEditText.format(component, getLocale()))
         ));
     }
 
