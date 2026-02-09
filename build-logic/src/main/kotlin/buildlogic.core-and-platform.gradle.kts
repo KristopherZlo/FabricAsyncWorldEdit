@@ -46,7 +46,7 @@ plugins.withId("maven-publish") {
                 pom {
                     name.set("${rootProject.name}-${project.name}" + " " + project.version)
                     description.set("Blazingly fast Minecraft world manipulation for artists, builders and everyone else.")
-                    url.set("https://github.com/IntellectualSites/FastAsyncWorldEdit")
+                    url.set("https://github.com/Plaaasma/FabricAsyncWorldEdit")
 
                     licenses {
                         license {
@@ -76,18 +76,24 @@ plugins.withId("maven-publish") {
                             organization.set("IntellectualSites")
                             organizationUrl.set("https://github.com/IntellectualSites")
                         }
+                        developer {
+                            id.set("Plaaasma")
+                            name.set("Plaaasma")
+                            organization.set("NerdOrg")
+                            organizationUrl.set("https://github.com/Plaaasma")
+                        }
                     }
 
                     scm {
-                        url.set("https://github.com/IntellectualSites/FastAsyncWorldEdit")
-                        connection.set("scm:git:https://github.com/IntellectualSites/FastAsyncWorldEdit.git")
-                        developerConnection.set("scm:git:git@github.com:IntellectualSites/FastAsyncWorldEdit.git")
+                        url.set("https://github.com/Plaaasma/FabricAsyncWorldEdit")
+                        connection.set("scm:git:https://github.com/Plaaasma/FabricAsyncWorldEdit.git")
+                        developerConnection.set("scm:git:git@github.com:Plaaasma/FabricAsyncWorldEdit.git")
                         tag.set("${project.version}")
                     }
 
                     issueManagement {
                         system.set("GitHub")
-                        url.set("https://github.com/IntellectualSites/FastAsyncWorldEdit/issues")
+                        url.set("https://github.com/Plaaasma/FabricAsyncWorldEdit/issues")
                     }
                 }
             }
