@@ -95,6 +95,10 @@ dependencies {
     "implementation"(libs.json.simple)
     "include"(libs.jchronic)
     "implementation"(libs.jchronic)
+    // Vanilla 1.20.1 does not ship snakeyaml; FAWE's settings parser
+    // (config.yml) needs it at runtime.
+    "include"(libs.snakeyaml)
+    "implementation"(libs.snakeyaml)
 
     // [1] Load the API dependencies from the fabric mod json...
     @Suppress("UNCHECKED_CAST")
