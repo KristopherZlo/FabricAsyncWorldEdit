@@ -32,6 +32,7 @@ import com.google.common.collect.Sets;
 import com.google.common.collect.Streams;
 import com.google.common.util.concurrent.Futures;
 import com.sk89q.worldedit.EditSession;
+import com.sk89q.worldedit.MaxChangedBlocksException;
 import com.sk89q.worldedit.WorldEditException;
 import com.sk89q.worldedit.blocks.BaseItem;
 import com.sk89q.worldedit.blocks.BaseItemStack;
@@ -69,29 +70,31 @@ import com.sk89q.worldedit.world.generation.StructureType;
 import com.sk89q.worldedit.world.item.ItemTypes;
 import com.sk89q.worldedit.world.weather.WeatherType;
 import com.sk89q.worldedit.world.weather.WeatherTypes;
-import net.minecraft.Util;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Holder;
+import net.minecraft.core.Registry;
 import net.minecraft.core.SectionPos;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.data.worldgen.features.EndFeatures;
 import net.minecraft.data.worldgen.features.TreeFeatures;
+import net.minecraft.resources.Identifier;
 import net.minecraft.resources.ResourceKey;
-import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerChunkCache;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.util.ProblemReporter;
 import net.minecraft.util.RandomSource;
+import net.minecraft.util.Util;
 import net.minecraft.world.Clearable;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
+import net.minecraft.world.entity.EntitySpawnReason;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.context.UseOnContext;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.Level;
-import net.minecraft.world.level.WorldGenLevel;
 import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.block.LiquidBlock;
 import net.minecraft.world.level.block.entity.BlockEntity;
@@ -111,9 +114,9 @@ import net.minecraft.world.level.storage.LevelData;
 import net.minecraft.world.level.storage.LevelStorageSource;
 import net.minecraft.world.level.storage.PrimaryLevelData;
 import net.minecraft.world.level.storage.ServerLevelData;
+import net.minecraft.world.level.storage.TagValueOutput;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.BlockHitResult;
-import org.enginehub.linbus.common.LinTagId;
 import org.enginehub.linbus.tree.LinCompoundTag;
 
 import java.lang.ref.WeakReference;
@@ -144,10 +147,10 @@ public class FabricWorld extends AbstractWorld {
 
     private static final RandomSource random = RandomSource.create();
 
-    private static ResourceLocation getDimensionRegistryKey(Level world) {
+    private static Identifier getDimensionRegistryKey(Level world) {
         return Objects.requireNonNull(world.getServer(), "server cannot be null")
             .registryAccess()
-            .registryOrThrow(Registries.DIMENSION_TYPE)
+            .lookupOrThrow(Registries.DIMENSION_TYPE)
             .getKey(world.dimensionType());
     }
 
@@ -262,29 +265,29 @@ public class FabricWorld extends AbstractWorld {
         var biomeArray = (PalettedContainer<Holder<Biome>>) chunk.getSection(chunk.getSectionIndex(position.y())).getBiomes();
         biomeArray.getAndSetUnchecked(
             position.x() & 3, position.y() & 3, position.z() & 3,
-            getWorld().registryAccess().registry(Registries.BIOME)
+            getWorld().registryAccess().lookup(Registries.BIOME)
                 .orElseThrow()
-                .getHolderOrThrow(ResourceKey.create(Registries.BIOME, ResourceLocation.parse(biome.id())))
+                .getOrThrow(ResourceKey.create(Registries.BIOME, Identifier.parse(biome.id())))
         );
-        chunk.setUnsaved(true);
+        chunk.markUnsaved();
         return true;
     }
 
-    private static final LoadingCache<ServerLevel, WorldEditFakePlayer> fakePlayers
-            = CacheBuilder.newBuilder().weakKeys().softValues().build(CacheLoader.from(WorldEditFakePlayer::new));
+    private static final LoadingCache<ServerLevel, FabricFakePlayer> fakePlayers
+            = CacheBuilder.newBuilder().weakKeys().softValues().build(CacheLoader.from(FabricFakePlayer::new));
 
     @Override
     public boolean useItem(BlockVector3 position, BaseItem item, Direction face) {
         ItemStack stack = FabricAdapter.adapt(new BaseItemStack(item.getType(), item.getNbtReference(), 1));
         ServerLevel world = (ServerLevel) getWorld();
-        final WorldEditFakePlayer fakePlayer;
+        final FabricFakePlayer fakePlayer;
         try {
             fakePlayer = fakePlayers.get(world);
         } catch (ExecutionException ignored) {
             return false;
         }
         fakePlayer.setItemInHand(InteractionHand.MAIN_HAND, stack);
-        fakePlayer.absMoveTo(position.x(), position.y(), position.z(),
+        fakePlayer.absSnapTo(position.x(), position.y(), position.z(),
                 (float) face.toVector().toYaw(), (float) face.toVector().toPitch());
         final BlockPos blockPos = FabricAdapter.toBlockPos(position);
         final BlockHitResult rayTraceResult = new BlockHitResult(FabricAdapter.toVec3(position),
@@ -293,11 +296,10 @@ public class FabricWorld extends AbstractWorld {
         InteractionResult used = stack.useOn(itemUseContext);
         if (used != InteractionResult.SUCCESS) {
             // try activating the block
-            used = getWorld().getBlockState(blockPos).useItemOn(stack, world, fakePlayer, InteractionHand.MAIN_HAND, rayTraceResult)
-                .result();
+            used = getWorld().getBlockState(blockPos).useItemOn(stack, world, fakePlayer, InteractionHand.MAIN_HAND, rayTraceResult);
         }
         if (used != InteractionResult.SUCCESS) {
-            used = stack.use(world, fakePlayer, InteractionHand.MAIN_HAND).getResult();
+            used = stack.use(world, fakePlayer, InteractionHand.MAIN_HAND);
         }
         return used == InteractionResult.SUCCESS;
     }
@@ -366,7 +368,6 @@ public class FabricWorld extends AbstractWorld {
                     originalWorld.dimensionTypeRegistration(),
                     originalWorld.getChunkSource().getGenerator()
                 ),
-                new WorldEditGenListener(),
                 originalWorld.isDebug(),
                 seed,
                 // No spawners are needed for this world.
@@ -429,7 +430,9 @@ public class FabricWorld extends AbstractWorld {
             BlockStateHolder<?> state = FabricAdapter.adapt(chunk.getBlockState(pos));
             BlockEntity blockEntity = chunk.getBlockEntity(pos);
             if (blockEntity != null) {
-                net.minecraft.nbt.CompoundTag tag = blockEntity.saveWithId(serverWorld.registryAccess());
+                var tagValueOutput = TagValueOutput.createWithContext(ProblemReporter.DISCARDING, getWorld().registryAccess());
+                blockEntity.saveWithId(tagValueOutput);
+                net.minecraft.nbt.CompoundTag tag = tagValueOutput.buildResult();
                 state = state.toBaseBlock(LazyReference.from(() -> NBTConverter.fromNative(tag)));
             }
             extent.setBlock(vec, state.toBaseBlock());
@@ -479,57 +482,82 @@ public class FabricWorld extends AbstractWorld {
             case MANGROVE -> TreeFeatures.MANGROVE;
             case TALL_MANGROVE -> TreeFeatures.TALL_MANGROVE;
             case CHERRY -> TreeFeatures.CHERRY;
+            case PALE_OAK -> TreeFeatures.PALE_OAK;
+            case PALE_OAK_CREAKING -> TreeFeatures.PALE_OAK_CREAKING;
             case RANDOM -> createTreeFeatureGenerator(TreeType.values()[ThreadLocalRandom.current().nextInt(TreeType.values().length)]);
             default -> null;
         };
     }
 
     @Override
-    public boolean generateTree(TreeType type, EditSession editSession, BlockVector3 position) {
+    public boolean generateTree(TreeType type, EditSession editSession, BlockVector3 position) throws MaxChangedBlocksException {
         ServerLevel world = (ServerLevel) getWorld();
         ConfiguredFeature<?, ?> generator = Optional.ofNullable(createTreeFeatureGenerator(type))
-            .map(k -> world.registryAccess().registryOrThrow(Registries.CONFIGURED_FEATURE).get(k))
+            .map(k -> world.registryAccess().lookupOrThrow(Registries.CONFIGURED_FEATURE).getValue(k))
             .orElse(null);
         ServerChunkCache chunkManager = world.getChunkSource();
         if (type == TreeType.CHORUS_PLANT) {
             position = position.add(0, 1, 0);
         }
-        WorldGenLevel proxyLevel = FabricServerLevelDelegateProxy.newInstance(editSession, world);
-        return generator != null && generator.place(
-            proxyLevel, chunkManager.getGenerator(), random,
-            FabricAdapter.toBlockPos(position)
-        );
+        try (FabricServerLevelDelegateProxy.LevelAndProxy proxyLevel = FabricServerLevelDelegateProxy.newInstance(editSession, world)) {
+            return generator != null && generator.place(
+                proxyLevel.level(), chunkManager.getGenerator(), random,
+                FabricAdapter.toBlockPos(position)
+            );
+        }
     }
 
     public boolean generateFeature(ConfiguredFeatureType type, EditSession editSession, BlockVector3 position) {
         ServerLevel world = (ServerLevel) getWorld();
-        ConfiguredFeature<?, ?> k = world.registryAccess().registryOrThrow(Registries.CONFIGURED_FEATURE).get(ResourceLocation.tryParse(type.id()));
+        ConfiguredFeature<?, ?> feature = world.registryAccess().lookupOrThrow(Registries.CONFIGURED_FEATURE).getValue(Identifier.tryParse(type.id()));
         ServerChunkCache chunkManager = world.getChunkSource();
-        WorldGenLevel proxyLevel = FabricServerLevelDelegateProxy.newInstance(editSession, world);
-        return k != null && k.place(proxyLevel, chunkManager.getGenerator(), random, FabricAdapter.toBlockPos(position));
+        try (FabricServerLevelDelegateProxy.LevelAndProxy proxyLevel = FabricServerLevelDelegateProxy.newInstance(editSession, world)) {
+            return feature != null && feature.place(
+                proxyLevel.level(), chunkManager.getGenerator(), random,
+                FabricAdapter.toBlockPos(position)
+            );
+        } catch (MaxChangedBlocksException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     @Override
     public boolean generateStructure(StructureType type, EditSession editSession, BlockVector3 position) {
         ServerLevel world = (ServerLevel) getWorld();
-        Structure k = world.registryAccess().registryOrThrow(Registries.STRUCTURE).get(ResourceLocation.tryParse(type.id()));
-        if (k == null) {
+        Registry<Structure> structureRegistry = world.registryAccess().lookupOrThrow(Registries.STRUCTURE);
+        Structure structure = structureRegistry.getValue(Identifier.tryParse(type.id()));
+        if (structure == null) {
             return false;
         }
 
         ServerChunkCache chunkManager = world.getChunkSource();
-        WorldGenLevel proxyLevel = FabricServerLevelDelegateProxy.newInstance(editSession, world);
-        ChunkPos chunkPos = new ChunkPos(new BlockPos(position.x(), position.y(), position.z()));
-        StructureStart structureStart = k.generate(world.registryAccess(), chunkManager.getGenerator(), chunkManager.getGenerator().getBiomeSource(), chunkManager.randomState(), world.getStructureManager(), world.getSeed(), chunkPos, 0, proxyLevel, biome -> true);
+        try (FabricServerLevelDelegateProxy.LevelAndProxy proxyLevel = FabricServerLevelDelegateProxy.newInstance(editSession, world)) {
+            ChunkPos chunkPos = new ChunkPos(new BlockPos(position.x(), position.y(), position.z()));
+            StructureStart structureStart = structure.generate(
+                structureRegistry.wrapAsHolder(structure), world.dimension(), world.registryAccess(),
+                chunkManager.getGenerator(), chunkManager.getGenerator().getBiomeSource(), chunkManager.randomState(),
+                world.getStructureManager(), world.getSeed(), chunkPos, 0, proxyLevel.level(),
+                biome -> true
+            );
 
-        if (!structureStart.isValid()) {
-            return false;
-        } else {
-            BoundingBox boundingBox = structureStart.getBoundingBox();
-            ChunkPos min = new ChunkPos(SectionPos.blockToSectionCoord(boundingBox.minX()), SectionPos.blockToSectionCoord(boundingBox.minZ()));
-            ChunkPos max = new ChunkPos(SectionPos.blockToSectionCoord(boundingBox.maxX()), SectionPos.blockToSectionCoord(boundingBox.maxZ()));
-            ChunkPos.rangeClosed(min, max).forEach((chunkPosx) -> structureStart.placeInChunk(proxyLevel, world.structureManager(), chunkManager.getGenerator(), world.getRandom(), new BoundingBox(chunkPosx.getMinBlockX(), world.getMinBuildHeight(), chunkPosx.getMinBlockZ(), chunkPosx.getMaxBlockX(), world.getMaxBuildHeight(), chunkPosx.getMaxBlockZ()), chunkPosx));
-            return true;
+            if (!structureStart.isValid()) {
+                return false;
+            } else {
+                BoundingBox boundingBox = structureStart.getBoundingBox();
+                ChunkPos min = new ChunkPos(SectionPos.blockToSectionCoord(boundingBox.minX()), SectionPos.blockToSectionCoord(boundingBox.minZ()));
+                ChunkPos max = new ChunkPos(SectionPos.blockToSectionCoord(boundingBox.maxX()), SectionPos.blockToSectionCoord(boundingBox.maxZ()));
+                ChunkPos.rangeClosed(min, max).forEach((chunkPosx) ->
+                    structureStart.placeInChunk(
+                        proxyLevel.level(), world.structureManager(), chunkManager.getGenerator(), world.getRandom(),
+                        new BoundingBox(chunkPosx.getMinBlockX(), world.getMinY(), chunkPosx.getMinBlockZ(),
+                            chunkPosx.getMaxBlockX(), world.getMaxY(), chunkPosx.getMaxBlockZ()),
+                        chunkPosx
+                    )
+                );
+                return true;
+            }
+        } catch (MaxChangedBlocksException e) {
+            throw new RuntimeException(e);
         }
     }
 
@@ -617,17 +645,17 @@ public class FabricWorld extends AbstractWorld {
 
     @Override
     public int getMinY() {
-        return getWorld().getMinBuildHeight();
+        return getWorld().getMinY();
     }
 
     @Override
     public int getMaxY() {
-        return getWorld().getMaxBuildHeight() - 1;
+        return getWorld().getMaxY();
     }
 
     @Override
     public BlockVector3 getSpawnPosition() {
-        return FabricAdapter.adapt(getWorld().getLevelData().getSpawnPos());
+        return FabricAdapter.adapt(getWorld().getLevelData().getRespawnData().pos());
     }
 
     @Override
@@ -646,7 +674,9 @@ public class FabricWorld extends AbstractWorld {
         BlockEntity tile = ((LevelChunk) getWorld().getChunk(pos)).getBlockEntity(pos, LevelChunk.EntityCreationType.CHECK);
 
         if (tile != null) {
-            net.minecraft.nbt.CompoundTag tag = tile.saveWithId(getWorld().registryAccess());
+            var tagValueOutput = TagValueOutput.createWithContext(ProblemReporter.DISCARDING, getWorld().registryAccess());
+            tile.saveWithId(tagValueOutput);
+            net.minecraft.nbt.CompoundTag tag = tagValueOutput.buildResult();
             return getBlock(position).toBaseBlock(LazyReference.from(() -> NBTConverter.fromNative(tag)));
         } else {
             return getBlock(position).toBaseBlock();
@@ -718,8 +748,8 @@ public class FabricWorld extends AbstractWorld {
         }
         tag.putString("id", entityId);
 
-        net.minecraft.world.entity.Entity createdEntity = EntityType.loadEntityRecursive(tag, world, (loadedEntity) -> {
-            loadedEntity.absMoveTo(location.getX(), location.getY(), location.getZ(), location.getYaw(), location.getPitch());
+        net.minecraft.world.entity.Entity createdEntity = EntityType.loadEntityRecursive(tag, world, EntitySpawnReason.COMMAND, (loadedEntity) -> {
+            loadedEntity.absSnapTo(location.getX(), location.getY(), location.getZ(), location.getYaw(), location.getPitch());
             return loadedEntity;
         });
         if (createdEntity != null) {
@@ -735,18 +765,20 @@ public class FabricWorld extends AbstractWorld {
         }
 
         // Adapted from net.minecraft.world.entity.EntityType#loadEntityRecursive
-        if (tag.contains("Passengers", LinTagId.LIST.id())) {
-            net.minecraft.nbt.ListTag nbttaglist = tag.getList("Passengers", LinTagId.COMPOUND.id());
-
+        tag.getList("Passengers").ifPresent(nbttaglist -> {
             for (int i = 0; i < nbttaglist.size(); ++i) {
-                removeUnwantedEntityTagsRecursively(nbttaglist.getCompound(i));
+                removeUnwantedEntityTagsRecursively(nbttaglist.getCompoundOrEmpty(i));
             }
-        }
+        });
     }
 
     @Override
     public Mask createLiquidMask() {
         return new LiquidMask(this);
+    }
+
+    public boolean isValid() {
+        return worldRef.get() != null;
     }
 
     @Override

@@ -19,13 +19,12 @@
 
 package com.sk89q.worldedit.fabric;
 
-import com.sk89q.util.StringUtil;
 import com.sk89q.worldedit.blocks.BaseItemStack;
 import com.sk89q.worldedit.entity.BaseEntity;
 import com.sk89q.worldedit.extension.platform.AbstractPlayerActor;
 import com.sk89q.worldedit.extent.inventory.BlockBag;
+import com.sk89q.worldedit.fabric.internal.ComponentConverter;
 import com.sk89q.worldedit.fabric.internal.NBTConverter;
-import com.sk89q.worldedit.fabric.net.handler.WECUIPacketHandler;
 import com.sk89q.worldedit.internal.cui.CUIEvent;
 import com.sk89q.worldedit.math.BlockVector3;
 import com.sk89q.worldedit.math.Vector3;
@@ -52,8 +51,10 @@ import net.minecraft.world.InteractionHand;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import org.enginehub.linbus.tree.LinCompoundTag;
+import org.enginehub.worldeditcui.protocol.CUIPacket;
 
 import java.util.Locale;
+import java.util.Set;
 import java.util.UUID;
 import javax.annotation.Nullable;
 
@@ -91,7 +92,7 @@ public class FabricPlayer extends AbstractPlayerActor {
     public Location getLocation() {
         Vector3 position = Vector3.at(this.player.getX(), this.player.getY(), this.player.getZ());
         return new Location(
-            FabricWorldEdit.inst.getWorld(this.player.serverLevel()),
+            FabricWorldEdit.inst.getWorld(this.player.level()),
             position,
             this.player.getYRot(),
             this.player.getXRot());
@@ -103,17 +104,19 @@ public class FabricPlayer extends AbstractPlayerActor {
         this.player.teleportTo(
             level,
             location.getX(), location.getY(), location.getZ(),
-            location.getYaw(), location.getPitch()
+            Set.of(),
+            location.getYaw(), location.getPitch(),
+            true
         );
         // This check doesn't really ever get to be false in Fabric
         // Since Fabric API doesn't allow cancelling the teleport.
         // However, other mods could theoretically mix this in, so allow the detection.
-        return this.player.serverLevel() == level;
+        return this.player.level() == level;
     }
 
     @Override
     public World getWorld() {
-        return FabricWorldEdit.inst.getWorld(this.player.serverLevel());
+        return FabricWorldEdit.inst.getWorld(this.player.level());
     }
 
     @Override
@@ -123,14 +126,9 @@ public class FabricPlayer extends AbstractPlayerActor {
 
     @Override
     public void dispatchCUIEvent(CUIEvent event) {
-        String[] params = event.getParameters();
-        String send = event.getTypeId();
-        if (params.length > 0) {
-            send = send + "|" + StringUtil.joinString(params, "|");
-        }
         ServerPlayNetworking.send(
             this.player,
-            new WECUIPacketHandler.CuiPacket(send)
+            new CUIPacket(event.getTypeId(), event.getParameters())
         );
     }
 
@@ -169,7 +167,7 @@ public class FabricPlayer extends AbstractPlayerActor {
 
     @Override
     public void print(Component component) {
-        this.player.sendSystemMessage(net.minecraft.network.chat.Component.Serializer.fromJson(
+        this.player.sendSystemMessage(ComponentConverter.Serializer.fromJson(
             GsonComponentSerializer.INSTANCE.serialize(WorldEditText.format(component, getLocale())),
             player.level().registryAccess()
         ));

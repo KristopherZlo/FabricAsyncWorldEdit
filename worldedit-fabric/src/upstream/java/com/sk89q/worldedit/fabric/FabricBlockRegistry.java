@@ -28,7 +28,7 @@ import com.sk89q.worldedit.world.block.BlockType;
 import com.sk89q.worldedit.world.registry.BlockMaterial;
 import com.sk89q.worldedit.world.registry.BundledBlockRegistry;
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.util.StringRepresentable;
 import net.minecraft.world.level.block.Block;
 
@@ -84,7 +84,7 @@ public class FabricBlockRegistry extends BundledBlockRegistry {
     public Collection<String> values() {
         List<String> blocks = new ArrayList<>();
         for (Block block : BuiltInRegistries.BLOCK) {
-            ResourceLocation id = BuiltInRegistries.BLOCK.getKey(block);
+            Identifier id = BuiltInRegistries.BLOCK.getKey(block);
             if (id == null) {
                 continue;
             }

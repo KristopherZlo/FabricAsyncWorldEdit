@@ -37,7 +37,7 @@ import com.sk89q.worldedit.world.DataFixer;
 import com.sk89q.worldedit.world.World;
 import com.sk89q.worldedit.world.registry.Registries;
 import net.minecraft.SharedConstants;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.server.dedicated.DedicatedServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -86,7 +86,7 @@ class FabricPlatform extends AbstractPlatform implements MultiUserPlatform {
 
     @Override
     public int getDataVersion() {
-        return SharedConstants.getCurrentVersion().getDataVersion().getVersion();
+        return SharedConstants.getCurrentVersion().dataVersion().version();
     }
 
     @Override
@@ -97,7 +97,7 @@ class FabricPlatform extends AbstractPlatform implements MultiUserPlatform {
     @Override
     public boolean isValidMobType(String type) {
         return FabricWorldEdit.getRegistry(net.minecraft.core.registries.Registries.ENTITY_TYPE)
-            .containsKey(ResourceLocation.parse(type));
+            .containsKey(Identifier.parse(type));
     }
 
     @Override

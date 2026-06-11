@@ -27,12 +27,12 @@ import java.util.Optional;
 
 import static com.google.common.base.Preconditions.checkArgument;
 
-class PropertyAdapter<T extends Comparable<T>> implements Property<T> {
+class FabricPropertyAdapter<T extends Comparable<T>> implements Property<T> {
 
     private final net.minecraft.world.level.block.state.properties.Property<T> property;
     private final List<T> values;
 
-    public PropertyAdapter(net.minecraft.world.level.block.state.properties.Property<T> property) {
+    public FabricPropertyAdapter(net.minecraft.world.level.block.state.properties.Property<T> property) {
         this.property = property;
         this.values = ImmutableList.copyOf(property.getPossibleValues());
     }

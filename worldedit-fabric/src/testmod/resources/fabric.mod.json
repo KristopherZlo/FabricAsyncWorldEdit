@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "id": "worldedit-sp-testharness",
+  "version": "1.0.0",
+  "name": "WorldEdit Singleplayer Test Harness",
+  "environment": "client",
+  "entrypoints": {
+    "client": [
+      "com.fastasyncworldedit.testharness.SpTestHarness"
+    ]
+  },
+  "depends": {
+    "worldedit": "*"
+  }
+}
