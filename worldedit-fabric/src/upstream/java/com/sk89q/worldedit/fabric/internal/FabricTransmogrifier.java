@@ -19,6 +19,9 @@
 
 package com.sk89q.worldedit.fabric.internal;
 
+import com.google.common.cache.CacheBuilder;
+import com.google.common.cache.CacheLoader;
+import com.google.common.cache.LoadingCache;
 import com.sk89q.worldedit.fabric.FabricAdapter;
 import com.sk89q.worldedit.registry.state.BooleanProperty;
 import com.sk89q.worldedit.registry.state.DirectionalProperty;
@@ -34,7 +37,6 @@ import net.minecraft.world.level.block.state.StateDefinition;
 
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.stream.Collectors;
@@ -43,29 +45,37 @@ import java.util.stream.Collectors;
  * Raw, un-cached transformations.
  */
 public class FabricTransmogrifier {
-    public static Property<?> transmogToWorldEditProperty(net.minecraft.world.level.block.state.properties.Property<?> property) {
-        return switch (property) {
-            case net.minecraft.world.level.block.state.properties.BooleanProperty booleanProperty ->
-                new BooleanProperty(property.getName(), new ArrayList<>(booleanProperty.getPossibleValues()));
-            case net.minecraft.world.level.block.state.properties.IntegerProperty integerProperty ->
-                new IntegerProperty(property.getName(), new ArrayList<>(integerProperty.getPossibleValues()));
-            case net.minecraft.world.level.block.state.properties.EnumProperty<?> enumProperty -> {
-                if (property.getValueClass() == net.minecraft.core.Direction.class) {
-                    List<Direction> values = property.getPossibleValues().stream()
-                        .map(v -> FabricAdapter.adaptEnumFacing((net.minecraft.core.Direction) v))
-                        .collect(Collectors.toCollection(ArrayList::new));
-                    yield new DirectionalProperty(property.getName(), values);
+
+    private static final LoadingCache<net.minecraft.world.level.block.state.properties.Property<?>, Property<?>> PROPERTY_CACHE = CacheBuilder.newBuilder().build(new CacheLoader<>() {
+        @Override
+        public Property<?> load(net.minecraft.world.level.block.state.properties.Property<?> property) throws Exception {
+            // FAWE property implementations mutate their value lists during block
+            // registry initialisation, so they must be handed mutable copies.
+            return switch (property) {
+                case net.minecraft.world.level.block.state.properties.BooleanProperty booleanProperty ->
+                    new BooleanProperty(property.getName(), new ArrayList<>(booleanProperty.getPossibleValues()));
+                case net.minecraft.world.level.block.state.properties.IntegerProperty integerProperty ->
+                    new IntegerProperty(property.getName(), new ArrayList<>(integerProperty.getPossibleValues()));
+                case net.minecraft.world.level.block.state.properties.EnumProperty<?> enumProperty -> {
+                    if (property.getValueClass() == net.minecraft.core.Direction.class) {
+                        yield new DirectionalProperty(property.getName(), property.getPossibleValues().stream()
+                            .map(v -> FabricAdapter.adaptEnumFacing((net.minecraft.core.Direction) v))
+                            .collect(Collectors.toCollection(ArrayList::new)));
+                    }
+                    // Note: do not make x.asString a method reference.
+                    // It will cause runtime bootstrap exceptions.
+                    //noinspection Convert2MethodRef
+                    yield new EnumProperty(property.getName(), enumProperty.getPossibleValues().stream()
+                        .map(x -> x.getSerializedName())
+                        .collect(Collectors.toCollection(ArrayList::new)));
                 }
-                // Note: do not make x.asString a method reference.
-                // It will cause runtime bootstrap exceptions.
-                //noinspection Convert2MethodRef
-                List<String> values = enumProperty.getPossibleValues().stream()
-                    .map(x -> x.getSerializedName())
-                    .collect(Collectors.toCollection(ArrayList::new));
-                yield new EnumProperty(property.getName(), values);
-            }
-            default -> new PropertyAdapter<>(property);
-        };
+                default -> new FabricPropertyAdapter<>(property);
+            };
+        }
+    });
+
+    public static Property<?> transmogToWorldEditProperty(net.minecraft.world.level.block.state.properties.Property<?> property) {
+        return PROPERTY_CACHE.getUnchecked(property);
     }
 
     private static Map<Property<?>, Object> transmogToWorldEditProperties(BlockType block, Map<net.minecraft.world.level.block.state.properties.Property<?>, Comparable<?>> mcProps) {
