@@ -781,7 +781,7 @@ public final class PlatformCommandManager {
                 // Some execution paths keep the edit session only in Request, not in injected values.
                 editSession = Request.request().getEditSession();
             }
-            LOGGER.info(
+            LOGGER.debug(
                     "[FAWE-FABRIC-DEBUG] command-finalize actor={} eventHasSession={} injectedOrRequestSession={}",
                     actor.getUniqueId(), event.getSession() != null, editSession != null
             );
