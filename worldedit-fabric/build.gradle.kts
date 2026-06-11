@@ -26,13 +26,41 @@ tasks.withType<RunGameTask>().configureEach {
 }
 
 tasks.named<RunGameTask>("runClient") {
-    args("--width", "320", "--height", "180")
+    args("--width", "854", "--height", "480")
 }
+
 
 sourceSets {
     named("main") {
         java.setSrcDirs(listOf("src/upstream/java"))
         resources.setSrcDirs(listOf("src/upstream/resources"))
+    }
+    create("testmod") {
+        java.setSrcDirs(listOf("src/testmod/java"))
+        resources.setSrcDirs(listOf("src/testmod/resources"))
+        compileClasspath += named("main").get().compileClasspath
+        runtimeClasspath += named("main").get().runtimeClasspath
+    }
+}
+
+loom {
+    mods {
+        create("worldedit") {
+            sourceSet(sourceSets["main"])
+        }
+        create("worldedit-sp-testharness") {
+            sourceSet(sourceSets["testmod"])
+        }
+    }
+    runs {
+        create("testmodClient") {
+            client()
+            source(sourceSets["testmod"])
+            programArgs("--width", "854", "--height", "480")
+            if (project.hasProperty("quickPlayWorld")) {
+                programArgs("--quickPlaySingleplayer", project.property("quickPlayWorld") as String)
+            }
+        }
     }
 }
 
@@ -53,6 +81,17 @@ dependencies {
     "modImplementation"(libs.parallelgzip)
     "include"(libs.sparsebitset)
     "modImplementation"(libs.sparsebitset)
+    // FAWE core runtime deps not provided by vanilla/Fabric (Spigot ships some of
+    // these on the Bukkit side). ZSTD must not be relocated:
+    // https://github.com/luben/zstd-jni/issues/189
+    "include"(libs.zstd)
+    "implementation"(libs.zstd)
+    // lz4 is NOT bundled here: vanilla 1.21.x ships org.lz4:lz4-java itself and
+    // the at.yawk.lz4 fork conflicts with it on the org.lz4 capability.
+    "include"(libs.json.simple)
+    "implementation"(libs.json.simple)
+    "include"(libs.jchronic)
+    "implementation"(libs.jchronic)
 
     // [1] Load the API dependencies from the fabric mod json...
     @Suppress("UNCHECKED_CAST")
